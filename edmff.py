@@ -95,38 +95,27 @@ class CoFusion2(nn.Module):
         return ((x * attn).sum(1)).unsqueeze(1)
 
 
-class DoubleFusion(nn.Module):
-    # TED fusion before the final edge map prediction
+class Fusion(nn.Module):
     def __init__(self, in_ch, out_ch):
         print("通道数")
         print(in_ch)
 
-        super(DoubleFusion, self).__init__()
+        super(Fusion, self).__init__()
         #修改
         self.DWconv1 = nn.Conv2d(in_ch, in_ch*8, kernel_size=3,
                               stride=1, padding=1, groups=in_ch) # before 64
-        # self.PTconv1 = Partial_conv3(in_ch,3)#修改，部分卷积
-        #self.DWconv1 = nn.Conv2d(in_ch, in_ch*12, kernel_size=3,
-        #                      stride=1, padding=1, groups=in_ch) # before 64
+        self.PTconv1 = Partial_conv3(in_ch,3)#修改，部分卷积
         self.PSconv1 = nn.PixelShuffle(1)
         self.PTconv2 = Partial_conv3(in_ch,3)#修改，部分卷积
         self.DWconv2 = nn.Conv2d(24, 24*1, kernel_size=3,
                               stride=1, padding=1,groups=24)# before 64  instead of 32
 
-        self.AF= nn.Tanh()#XAF() #nn.Tanh()# XAF() #   # Smish()#
+        self.AF= nn.Tanh()
 
 
     def forward(self, x):
-        # fusecat = torch.cat(x, dim=1)
-
-        # 修改
-        attn = self.PSconv1(self.DWconv1(self.AF(x))) # #TEED best res TEDv14 [8, 32, 352, 352]
-
-        # attn = self.PSconv1(self.PTconv1(self.AF(x)))#修改，部分卷积
-        
-        attn2 = self.PSconv1(self.DWconv2(self.AF(attn))) # #TEED best res TEDv14[8, 3, 352, 352]
-        
-        # attn2 = self.PSconv1(self.PTconv2(self.AF(attn)))#修改，部分卷积
+        attn = self.PSconv1(self.PTconv1(self.AF(x)))#修改，部分卷积
+        attn2 = self.PSconv1(self.PTconv2(self.AF(attn)))#修改，部分卷积
 
         return Fsmish(((attn2 +attn).sum(1)).unsqueeze(1)) #TED best res
 
@@ -287,14 +276,9 @@ class TED(nn.Module):
 
     def __init__(self):
         super(TED, self).__init__()
-        self.block_lxt = DoubleConvBlock(3, 8, 16)#修改
-        # self.block_lxt_se = SEBlock(16)  # 修改1，添加使用注意力的SE块
-        # self.block_lxt_se = CBAMBlock(16)  # 修改2，用CBAMBlock替换
-        # self.block_lxt = ReluConvBlock(3, 8, 16)#修改，消融实验用，更换激活函数
+        self.block_0 = DoubleConvBlock(3, 8, 16)#修改
 
-        #self.block_1 = DoubleConvBlock(3, 16, 16, stride=2,)
-
-        #修改 partial卷积（原）
+        #partial卷积
         self.block_1 = DoubleConvBlock(16, 16, stride=2, )#修改
 
         self.block_2 = DoubleConvBlock(16, 32, use_act=False)
@@ -302,7 +286,7 @@ class TED(nn.Module):
         self.dblock_3 = _DenseBlock(1, 32, 48) # [128,256,100,100] before (2, 32, 64)
 
 
-        #修改CoT注意力
+        #CoT注意力
         self.coT_attn = CoTAttention(dim=48)  # 在block 3后引入CoT Attention
 
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -320,8 +304,7 @@ class TED(nn.Module):
         self.up_block_3 = UpConvBlock(48, 2) # (32, 64, 1)
 
         ##修改
-        self.block_cat = DoubleFusion(3,3)# EDMFF fusion
-        #self.block_cat = DoubleFusion(2, 3)  # TEED fusion
+        self.block_cat = Fusion(3,3)# EDMFF fusion
 
         self.apply(weight_init)
 
@@ -357,101 +340,26 @@ class TED(nn.Module):
 
     def forward(self, x, single_test=False):
         assert x.ndim == 4, x.shape
-        
-        ##修改3 多尺度双边滤波，修改4 先高斯再双边滤波，修改5 先高斯再双边滤波，自适应参数
-        ## 转换张量为numpy数组
-        #x_np = x.cpu().numpy().transpose((0, 2, 3, 1))
-        ## 对每张图片应用多尺度双边滤波
-        #for i in range(x_np.shape[0]):
-        ##    x_np[i] = multi_scale_bilateral_filter(x_np[i])
-        ##    x_np[i] = combined_filter(x_np[i])
-        #    x_np[i] = combined_adaptive_filter(x_np[i])
-        ## 转换回张量
-        #x = torch.from_numpy(x_np.transpose((0, 3, 1, 2))).to(x.device)
-        
-        
-        ##修改6 转换张量为numpy数组
-        #x_np = x.cpu().numpy().transpose((0, 2, 3, 1))
-        ## 对每张图片应用细节保持滤波
-        #for i in range(x_np.shape[0]):
-            ##x_np[i] = detail_preserving_filter(x_np[i])
-            ##x_np[i] = multi_scale_detail_preserving_filter(x_np[i])
-            #x_np[i] = enhanced_multi_scale_filter(x_np[i])
-        ## 转换回张量
-        #x = torch.from_numpy(x_np.transpose((0, 3, 1, 2))).to(x.device)
-        
-        
-        
-         # supose the image size is 352x352
 
-        #print(x.shape)#[8, 3, 300, 300]
+        # Block 0
+        block_0 = self.block_lxt(x)  # [8,16,300,300]
+        block_0_side = self.side_lxt(block_0)  # 16 [8,32,150,150]
 
-        # 修改
-        block_lxt = self.block_lxt(x)  # [8,16,300,300]
+        # Block 1
+        block_1 = self.block_1(block_0)
         
-        ##修改9
-        #block_lxt = self.enhanced_danet(block_lxt)
-        #block_lxt = self.adaptive_conv(block_lxt)
-        
-        ##修改8
-        #block_lxt = self.enhanced_cbam(block_lxt)
-        #block_lxt = self.adaptive_conv(block_lxt)
-        
-        # block_lxt = self.block_lxt_se(block_lxt)  # 修改1，添加使用注意力的SE块
-        # block_lxt = adaptive_bilateral_filter(block_lxt)# 修改2 自适应双边滤波
-        
-        block_lxt_side = self.side_lxt(block_lxt)  # 16 [8,32,150,150]
+        block_1_side = self.side_1(block_1)
+        block_1_add = block_0_side + block_1
 
-        # print("--------8*8 block--------")
-        # print(block_lxt.shape)
-        # print(block_lxt_side.shape)
-        # print("--------8*8 block--------")
+        # Block 2
+        block_2 = self.block_2(block_1_add)
+        block_2_down = self.maxpool(block_2)
+        block_2_add = block_2_down + block_1_side
 
-        # 修改Block 1
-        block_1 = self.block_1(block_lxt) # [8,16,150,150]
-        #print(block_1.shape)
-        
-        block_1_side = self.side_1(block_1) # 16 [8,32,88,88]
-        block_1_add = block_lxt_side + block_1
-        #print(block_1_add.shape)
-        # # Block 1
-        # block_1 = self.block_1(x) # [8,16,176,176]
-        # block_1_side = self.side_1(block_1) # 16 [8,32,88,88]
-
-
-        # 修改的Block 2
-        block_2 = self.block_2(block_1_add) # 32 # [8,32,176,176]
-        # block_2 = self.block_2_se(block_2)  # 修改1，添加使用注意力的SE块
-        block_2_down = self.maxpool(block_2) # [8,32,88,88]
-        block_2_add = block_2_down + block_1_side # [8,32,75,75]
-
-        # # Block 2
-        # block_2 = self.block_2(block_1) # 32 # [8,32,176,176]
-        # block_2_down = self.maxpool(block_2) # [8,32,88,88]
-        # block_2_add = block_2_down + block_1_side # [8,32,88,88]
-
-        # print("----------block2----------")
-        # print(block_2.shape)
-        # print(block_2_down.shape)
-        # print(block_2_add.shape)
-        # print("----------block2----------")
-
-        # # Block 3
-        # block_3_pre_dense = self.pre_dense_3(block_2_down) # [8,64,88,88] block 3 L connection
-        # block_3, _ = self.dblock_3([block_2_add, block_3_pre_dense]) # [8,64,88,88]
-
-        # 修改Block 3
-        block_3_pre_dense = self.pre_dense_3(block_2) # [8,64,88,88] block 3 L connection
+        # Block 3
+        block_3_pre_dense = self.pre_dense_3(block_2)
         block_3_pre = self.maxpool(block_3_pre_dense)
-        # print(block_3_pre_dense.shape)
-        block_3, _ = self.dblock_3([block_2_add, block_3_pre]) # [8,64,88,88]
-        ## 修改 CoT注意力
-        #block_3 = self.coT_attn(block_3)  # 应用CoT Attention
-
-        # print("----------block3----------")
-        # print(block_3_pre_dense.shape)
-        # print(block_3.shape)
-        # print("----------block3----------")
+        block_3, _ = self.dblock_3([block_2_add, block_3_pre])
 
         # upsampling blocks
         out_1 = self.up_block_1(block_1)
@@ -460,15 +368,8 @@ class TED(nn.Module):
 
         results = [out_1, out_2, out_3]
 
-        # concatenate multiscale outputs
-
         block_cat = torch.cat(results, dim=1)  # Bx6xHxW
-        # print("--------block_cat----------")
-        # print(block_cat.shape)
-        # print("--------block_cat----------")
-        
-        
-        block_cat = self.block_cat(block_cat)  # Bx1xHxW DoubleFusion
+        block_cat = self.block_cat(block_cat)
 
         results.append(block_cat)
         return results
@@ -482,14 +383,7 @@ if __name__ == '__main__':
     # device = "cuda" if torch.cuda.is_available() else "cpu"
     device = "cuda"
     input = torch.rand(batch_size, 3, img_height, img_width).to(device)
-    # target = torch.rand(batch_size, 1, img_height, img_width).to(device)
     print(f"input shape: {input.shape}")
     model = TED().to(device)
     output = model(input)
     print(f"output shapes: {[t.shape for t in output]}")
-
-    # for i in range(20000):
-    #     print(i)
-    #     output = model(input)
-    #     loss = nn.MSELoss()(output[-1], target)
-    #     loss.backward()

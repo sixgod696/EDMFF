@@ -17,7 +17,7 @@ import torch.nn.utils.prune as prune
 from dataset import DATASET_NAMES, BipedDataset, TestDataset, dataset_info
 from loss2 import *
 
-from ted import TED # TEED architecture
+from edmff import TED # TEED architecture
 
 from utils.img_processing import (image_normalization, save_image_batch_to_disk,
                    visualize_result, count_parameters)
