@@ -17,7 +17,7 @@ import torch.nn.utils.prune as prune
 from dataset import DATASET_NAMES, BipedDataset, TestDataset, dataset_info
 from loss2 import *
 
-from edmff import TED # TEED architecture
+from edmff import EDMFF # EDMFF architecture
 
 from utils.img_processing import (image_normalization, save_image_batch_to_disk,
                    visualize_result, count_parameters)
@@ -47,9 +47,9 @@ def train_one_epoch(epoch, dataloader, model, criterions, optimizer, device,
         images = sample_batched['images'].to(device)  # BxCxHxW
         labels = sample_batched['labels'].to(device)  # BxHxW
         preds_list = model(images)
-        loss1 = sum([criterion2(preds, labels,l_w) for preds, l_w in zip(preds_list[:-1],l_weight0)]) # bdcn_loss2 [1,2,3] TEED
-        loss2 = criterion1(preds_list[-1], labels, l_weight[-1], device) # cats_loss [dfuse] TEED
-        tLoss = loss2+loss1 # TEED
+        loss1 = sum([criterion2(preds, labels,l_w) for preds, l_w in zip(preds_list[:-1],l_weight0)]) # bdcn_loss2 [1,2,3] EDMFF
+        loss2 = criterion1(preds_list[-1], labels, l_weight[-1], device) # cats_loss [dfuse] EDMFF
+        tLoss = loss2+loss1 # EDMFF
 
         optimizer.zero_grad()
         tLoss.backward()
@@ -212,7 +212,7 @@ def testPich(checkpoint_path, dataloader, model, device, output_dir, args, resiz
 
 def parse_args(is_testing=True):
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='TEED model')
+    parser = argparse.ArgumentParser(description='EDMFF model')
     parser.add_argument('--choose_test_data',
                         type=int,
                         default=15,     # UDED=15
@@ -265,7 +265,7 @@ def parse_args(is_testing=True):
     parser.add_argument('--predict_all',
                         type=bool,
                         default=False,
-                        help='True: Generate all TEED outputs in all_edges ')
+                        help='True: Generate all EDMFF outputs in all_edges ')
     parser.add_argument('--up_scale',
                         type=bool,
                         default=False, # for Upsale test set in 30%
@@ -312,7 +312,7 @@ def parse_args(is_testing=True):
     parser.add_argument('--adjust_lr', default=[4], type=int,
                         help='Learning rate step size.')  # [4] [6,9,19]
     parser.add_argument('--version_notes',
-                        default='TEED BIPED+BRIND-trainingdataLoader BRIND light AF -USNet--noBN xav init normal bdcnLoss2+cats2loss +DoubleFusion-3AF, AF sum',
+                        default='EDMFF',
                         type=str,
                         help='version notes')
     parser.add_argument('--batch_size',
@@ -400,7 +400,7 @@ def main(args, train_inf):
 
 
     # Instantiate model and move it to the computing device
-    model = TED().to(device)
+    model = EDMFF().to(device)
     # model = nn.DataParallel(model)
     ini_epoch =0
     if not args.is_testing:
@@ -553,13 +553,13 @@ def main(args, train_inf):
 
     num_param = count_parameters(model)
     print('-------------------------------------------------------')
-    print('TEED parameters:')
+    print('EDMFF parameters:')
     print(num_param)
     print('-------------------------------------------------------')
 
 if __name__ == '__main__':
     # os.system(" ".join(command))
-    is_testing = False# True to use TEED for testing
+    is_testing = False# True to use EDMFF for testing
     args, train_info = parse_args(is_testing=is_testing)
     main(args, train_info)
 

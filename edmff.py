@@ -1,8 +1,3 @@
-# TEED: is a Tiny but Efficient Edge Detection, it comes from the LDC-B3
-# with a Slightly modification
-# LDC parameters:
-# 155665
-# TED > 58K
 
 import torch
 import torch.nn as nn
@@ -74,7 +69,6 @@ class CoFusion(nn.Module):
 
 
 class CoFusion2(nn.Module):
-        # TEDv14-3
     def __init__(self, in_ch, out_ch):
         super(CoFusion2, self).__init__()
         self.conv1 = nn.Conv2d(in_ch, 32, kernel_size=3,
@@ -117,7 +111,7 @@ class Fusion(nn.Module):
         attn = self.PSconv1(self.PTconv1(self.AF(x)))#修改，部分卷积
         attn2 = self.PSconv1(self.PTconv2(self.AF(attn)))#修改，部分卷积
 
-        return Fsmish(((attn2 +attn).sum(1)).unsqueeze(1)) #TED best res
+        return Fsmish(((attn2 +attn).sum(1)).unsqueeze(1))
 
 
 class _DenseLayer(nn.Sequential):
@@ -262,20 +256,13 @@ class SEBlock(nn.Module):
         return x * y
 
 
-
-
-
-
-
-
-
 #修改主体网络结构
-class TED(nn.Module):
-    """ Definition of  Tiny and Efficient Edge Detector """
+class EDMFF(nn.Module):
+    """ Definition of  EDMFF """
     
 
     def __init__(self):
-        super(TED, self).__init__()
+        super(EDMFF, self).__init__()
         self.block_0 = DoubleConvBlock(3, 8, 16)#修改
 
         #partial卷积
@@ -384,6 +371,6 @@ if __name__ == '__main__':
     device = "cuda"
     input = torch.rand(batch_size, 3, img_height, img_width).to(device)
     print(f"input shape: {input.shape}")
-    model = TED().to(device)
+    model = EDMFF().to(device)
     output = model(input)
     print(f"output shapes: {[t.shape for t in output]}")
